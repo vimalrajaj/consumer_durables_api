@@ -347,15 +347,279 @@ async function findAndAssignTechnician({ ticket_id, customer_id, appliance_type,
 // Send notifications (simplified for now)
 async function sendCustomerNotifications({ customer, ticket, appointment, technician }) {
     try {
-        console.log(`📱 Sending notifications to ${customer.full_name}`);
+        console.log(`📱📧 Sending SMS & Email notifications to ${customer.full_name}`);
         
-        // TODO: Implement SMS and Email
-        console.log(`SMS: Your service request ${ticket.ticket_number} is scheduled for ${appointment.slot_start}`);
+        // Send SMS
+        const smsResult = await sendSMSNotification({
+            phone: customer.phone,
+            customer_name: customer.full_name,
+            ticket_number: ticket.ticket_number,
+            technician_name: technician.name,
+            technician_phone: technician.phone,
+            service_type: ticket.request_type,
+            appliance_type: ticket.appliance_type
+        });
+
+        // Send Email  
+        const emailResult = await sendEmailNotification({
+            email: customer.email,
+            customer_name: customer.full_name,
+            ticket_number: ticket.ticket_number,
+            technician_name: technician.name,
+            technician_phone: technician.phone,
+            service_type: ticket.request_type,
+            appliance_type: ticket.appliance_type,
+            appointment_time: appointment.slot_start,
+            estimated_response_time: "Within 2 hours"
+        });
+
+        console.log(`✅ Notifications sent - SMS: ${smsResult.success}, Email: ${emailResult.success}`);
         
-        return true;
+        return { sms: smsResult, email: emailResult };
     } catch (error) {
         console.error('❌ Notification failed:', error);
         return false;
+    }
+}
+
+// 📧📱 NOTIFICATION ENDPOINTS FOR SMS & EMAIL
+
+// 1. Send Complete Notifications (SMS + Email)
+app.post('/api/send-notifications', async (req, res) => {
+    console.log('📧📱 Sending complete notifications');
+    console.log(JSON.stringify(req.body, null, 2));
+    
+    try {
+        const {
+            customer_name,
+            customer_phone,
+            customer_email,
+            ticket_number,
+            technician_name,
+            technician_phone,
+            service_type,
+            appliance_type,
+            appointment_time,
+            estimated_response_time
+        } = req.body;
+
+        // Send SMS
+        const smsResult = await sendSMSNotification({
+            phone: customer_phone,
+            customer_name,
+            ticket_number,
+            technician_name,
+            technician_phone,
+            service_type,
+            appliance_type
+        });
+
+        // Send Email  
+        const emailResult = await sendEmailNotification({
+            email: customer_email,
+            customer_name,
+            ticket_number,
+            technician_name,
+            technician_phone,
+            service_type,
+            appliance_type,
+            appointment_time,
+            estimated_response_time
+        });
+
+        res.json({
+            success: true,
+            message: 'Notifications sent successfully',
+            data: {
+                sms: smsResult,
+                email: emailResult
+            }
+        });
+
+    } catch (error) {
+        console.error('❌ Notification Error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to send notifications',
+            error: error.message
+        });
+    }
+});
+
+// 2. Send SMS Only
+app.post('/api/send-sms', async (req, res) => {
+    console.log('📱 Sending SMS notification');
+    
+    try {
+        const result = await sendSMSNotification(req.body);
+        
+        res.json({
+            success: true,
+            message: 'SMS sent successfully',
+            data: result
+        });
+
+    } catch (error) {
+        console.error('❌ SMS Error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to send SMS',
+            error: error.message
+        });
+    }
+});
+
+// 3. Send Email Only
+app.post('/api/send-email', async (req, res) => {
+    console.log('📧 Sending Email notification');
+    
+    try {
+        const result = await sendEmailNotification(req.body);
+        
+        res.json({
+            success: true,
+            message: 'Email sent successfully', 
+            data: result
+        });
+
+    } catch (error) {
+        console.error('❌ Email Error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to send email',
+            error: error.message
+        });
+    }
+});
+
+// 📱 SMS HELPER FUNCTION
+async function sendSMSNotification({ phone, customer_name, ticket_number, technician_name, technician_phone, service_type, appliance_type }) {
+    try {
+        // Twilio configuration from environment variables
+        const accountSid = process.env.TWILIO_ACCOUNT_SID;
+        const authToken = process.env.TWILIO_AUTH_TOKEN;
+        const fromPhone = process.env.TWILIO_PHONE_NUMBER;
+
+        if (!accountSid || !authToken || !fromPhone) {
+            throw new Error('Twilio credentials not configured');
+        }
+
+        // Short SMS for trial account (under 160 chars)
+        const smsBody = `Service confirmed! Ticket: ${ticket_number}. Technician: ${technician_name} (${technician_phone}). Thank you!`;
+
+        // Twilio API call
+        const response = await axios.post(
+            `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
+            new URLSearchParams({
+                From: fromPhone,
+                To: phone,
+                Body: smsBody
+            }),
+            {
+                auth: {
+                    username: accountSid,
+                    password: authToken
+                },
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                }
+            }
+        );
+
+        console.log('📱 SMS sent successfully:', response.data.sid);
+        return {
+            success: true,
+            sid: response.data.sid,
+            status: response.data.status
+        };
+
+    } catch (error) {
+        console.error('❌ SMS Error:', error.response?.data || error.message);
+        throw error;
+    }
+}
+
+// 📧 EMAIL HELPER FUNCTION
+async function sendEmailNotification({ email, customer_name, ticket_number, technician_name, technician_phone, service_type, appliance_type, appointment_time, estimated_response_time }) {
+    try {
+        // SendGrid configuration from environment variables
+        const sgMail = require('@sendgrid/mail');
+        const apiKey = process.env.SENDGRID_API_KEY;
+        const fromEmail = process.env.FROM_EMAIL || 'vimalrajaj.cse2023@citchennai.net';
+
+        if (!apiKey) {
+            throw new Error('SendGrid API key not configured');
+        }
+
+        sgMail.setApiKey(apiKey);
+
+        const emailContent = {
+            to: [{ email: email, name: customer_name }],
+            from: { email: fromEmail, name: 'Consumer Durables Service' },
+            subject: `Service Confirmation - Ticket ${ticket_number}`,
+            html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                    <h2 style="color: #2c5aa0;">🔧 Service Request Confirmed</h2>
+                    
+                    <p>Dear ${customer_name},</p>
+                    
+                    <p>Thank you for choosing our Consumer Durables Service! Your ${service_type} request has been successfully confirmed.</p>
+                    
+                    <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                        <h3 style="color: #2c5aa0; margin-top: 0;">Service Details:</h3>
+                        <ul style="list-style: none; padding: 0;">
+                            <li><strong>📋 Ticket Number:</strong> ${ticket_number}</li>
+                            <li><strong>🔧 Service Type:</strong> ${service_type}</li>
+                            <li><strong>📱 Appliance:</strong> ${appliance_type}</li>
+                            <li><strong>👨‍🔧 Technician:</strong> ${technician_name}</li>
+                            <li><strong>📞 Technician Phone:</strong> ${technician_phone}</li>
+                            <li><strong>⏰ Expected Response:</strong> ${estimated_response_time || 'Within 24 hours'}</li>
+                        </ul>
+                    </div>
+                    
+                    <h3 style="color: #2c5aa0;">What Happens Next?</h3>
+                    <ol>
+                        <li>Our technician ${technician_name} will contact you soon</li>
+                        <li>They will schedule a convenient time for the visit</li>
+                        <li>Our expert will arrive and resolve your ${appliance_type} issue</li>
+                        <li>You'll receive service completion confirmation</li>
+                    </ol>
+                    
+                    <div style="background: #e3f2fd; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                        <p style="margin: 0;"><strong>💡 Need to contact us?</strong></p>
+                        <p style="margin: 5px 0;">Technician: ${technician_name} - ${technician_phone}</p>
+                        <p style="margin: 5px 0;">Reference: Ticket ${ticket_number}</p>
+                    </div>
+                    
+                    <p>Thank you for trusting us with your appliance service needs!</p>
+                    
+                    <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
+                    <p style="color: #666; font-size: 12px;">
+                        This is an automated confirmation email. Please do not reply to this email.
+                    </p>
+                </div>
+            `
+        };
+
+        // Use SendGrid library to send email
+        const msg = {
+            to: email,
+            from: fromEmail,
+            subject: `Service Confirmation - Ticket ${ticket_number}`,
+            html: emailContent.html
+        };
+
+        const response = await sgMail.send(msg);
+        
+        console.log('📧 Email sent successfully');
+        return {
+            success: true,
+            messageId: response[0].headers['x-message-id'] || 'sent'
+        };
+
+    } catch (error) {
+        console.error('❌ Email Error:', error.response?.data || error.message);
+        throw error;
     }
 }
 
