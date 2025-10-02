@@ -87,13 +87,20 @@ app.post('/api/customer-intake', async (req, res) => {
         });
 
         // Step 5: Send notifications
+        console.log('\n🔄 Checking if notifications should be sent...');
+        console.log('Assignment success:', assignment.success);
+        
         if (assignment.success) {
-            await sendCustomerNotifications({
+            console.log('✅ Assignment successful, calling sendCustomerNotifications...');
+            const notificationResult = await sendCustomerNotifications({
                 customer,
                 ticket,
                 appointment: assignment.appointment,
                 technician: assignment.technician
             });
+            console.log('📧📱 Notification function result:', JSON.stringify(notificationResult, null, 2));
+        } else {
+            console.log('❌ Assignment not successful, skipping notifications');
         }
 
         // Response back to Inya.ai
@@ -119,6 +126,24 @@ app.post('/api/customer-intake', async (req, res) => {
             error: error.message
         });
     }
+});
+
+// 1.5. Debug endpoint to see what Inya.ai is sending
+app.post('/api/debug-intake', async (req, res) => {
+    console.log('\n🔍 DEBUG: Inya.ai Request Received');
+    console.log('Headers:', JSON.stringify(req.headers, null, 2));
+    console.log('Body:', JSON.stringify(req.body, null, 2));
+    console.log('Query:', JSON.stringify(req.query, null, 2));
+    
+    res.json({
+        success: true,
+        message: 'Debug data logged',
+        received: {
+            headers: req.headers,
+            body: req.body,
+            query: req.query
+        }
+    });
 });
 
 // 2. Get Ticket Status (For follow-up calls)
@@ -344,12 +369,27 @@ async function findAndAssignTechnician({ ticket_id, customer_id, appliance_type,
     }
 }
 
-// Send notifications (simplified for now)
+// Send notifications with enhanced logging
 async function sendCustomerNotifications({ customer, ticket, appointment, technician }) {
     try {
-        console.log(`📱📧 Sending SMS & Email notifications to ${customer.full_name}`);
+        console.log('\n� NOTIFICATION PROCESS STARTED');
+        console.log('� Customer:', JSON.stringify({
+            name: customer.full_name,
+            phone: customer.phone,
+            email: customer.email
+        }, null, 2));
+        console.log('🎫 Ticket:', JSON.stringify({
+            number: ticket.ticket_number,
+            type: ticket.request_type,
+            appliance: ticket.appliance_type
+        }, null, 2));
+        console.log('👷 Technician:', JSON.stringify({
+            name: technician.name,
+            phone: technician.phone
+        }, null, 2));
         
         // Send SMS
+        console.log('\n📱 Attempting to send SMS...');
         const smsResult = await sendSMSNotification({
             phone: customer.phone,
             customer_name: customer.full_name,
@@ -359,8 +399,10 @@ async function sendCustomerNotifications({ customer, ticket, appointment, techni
             service_type: ticket.request_type,
             appliance_type: ticket.appliance_type
         });
+        console.log('📱 SMS Result:', JSON.stringify(smsResult, null, 2));
 
         // Send Email  
+        console.log('\n📧 Attempting to send Email...');
         const emailResult = await sendEmailNotification({
             email: customer.email,
             customer_name: customer.full_name,
@@ -372,13 +414,15 @@ async function sendCustomerNotifications({ customer, ticket, appointment, techni
             appointment_time: appointment.slot_start,
             estimated_response_time: "Within 2 hours"
         });
+        console.log('📧 Email Result:', JSON.stringify(emailResult, null, 2));
 
-        console.log(`✅ Notifications sent - SMS: ${smsResult.success}, Email: ${emailResult.success}`);
+        console.log(`\n✅ NOTIFICATIONS COMPLETED - SMS: ${smsResult.success}, Email: ${emailResult.success}`);
         
         return { sms: smsResult, email: emailResult };
     } catch (error) {
-        console.error('❌ Notification failed:', error);
-        return false;
+        console.error('❌ NOTIFICATION FAILED:', error.message);
+        console.error('❌ Stack:', error.stack);
+        return { sms: { success: false, error: error.message }, email: { success: false, error: error.message } };
     }
 }
 
@@ -492,6 +536,49 @@ app.post('/api/send-email', async (req, res) => {
     }
 });
 
+// 📱 PHONE NUMBER FORMATTER (E.164 Format)
+function formatPhoneNumber(phone) {
+    if (!phone) return null;
+    
+    // Remove all non-digit characters
+    let cleanPhone = phone.replace(/\D/g, '');
+    
+    console.log('📱 Original phone:', phone);
+    console.log('📱 Cleaned phone:', cleanPhone);
+    
+    // Handle different formats
+    if (cleanPhone.startsWith('91') && cleanPhone.length === 12) {
+        // Indian number with country code (without +)
+        return '+' + cleanPhone;
+    } else if (cleanPhone.startsWith('8') && cleanPhone.length === 10) {
+        // Indian number without country code
+        return '+91' + cleanPhone;
+    } else if (cleanPhone.startsWith('9') && cleanPhone.length === 10) {
+        // Indian number without country code
+        return '+91' + cleanPhone;
+    } else if (cleanPhone.startsWith('7') && cleanPhone.length === 10) {
+        // Indian number without country code
+        return '+91' + cleanPhone;
+    } else if (cleanPhone.startsWith('6') && cleanPhone.length === 10) {
+        // Indian number without country code
+        return '+91' + cleanPhone;
+    } else if (cleanPhone.length === 12 && !cleanPhone.startsWith('91')) {
+        // Other country with country code
+        return '+' + cleanPhone;
+    } else if (cleanPhone.length === 13 && cleanPhone.startsWith('91')) {
+        // Already formatted correctly but without +
+        return '+' + cleanPhone;
+    }
+    
+    // If already has +, return as is
+    if (phone.startsWith('+')) {
+        return phone;
+    }
+    
+    // Default: assume Indian number and add +91
+    return '+91' + cleanPhone;
+}
+
 // 📱 SMS HELPER FUNCTION
 async function sendSMSNotification({ phone, customer_name, ticket_number, technician_name, technician_phone, service_type, appliance_type }) {
     try {
@@ -504,15 +591,26 @@ async function sendSMSNotification({ phone, customer_name, ticket_number, techni
             throw new Error('Twilio credentials not configured');
         }
 
+        // Format phone number to E.164 format
+        const formattedPhone = formatPhoneNumber(phone);
+        console.log('📱 Formatted phone for SMS:', formattedPhone);
+        
+        if (!formattedPhone) {
+            throw new Error('Invalid phone number format');
+        }
+
         // Short SMS for trial account (under 160 chars)
         const smsBody = `Service confirmed! Ticket: ${ticket_number}. Technician: ${technician_name} (${technician_phone}). Thank you!`;
+
+        console.log('📱 Sending SMS to:', formattedPhone);
+        console.log('📱 SMS Body:', smsBody);
 
         // Twilio API call
         const response = await axios.post(
             `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
             new URLSearchParams({
                 From: fromPhone,
-                To: phone,
+                To: formattedPhone,
                 Body: smsBody
             }),
             {
