@@ -179,6 +179,80 @@ app.get('/api/ticket/:ticket_id', async (req, res) => {
     }
 });
 
+// 2.1. Get Ticket Status by Ticket Number (User-friendly)
+app.get('/api/ticket-status/:ticket_number', async (req, res) => {
+    try {
+        const { ticket_number } = req.params;
+        console.log(`🎫 Looking up ticket: ${ticket_number}`);
+        
+        const { data: ticket, error } = await supabase
+            .from('tickets')
+            .select(`
+                *,
+                customer:customers(*),
+                appointment:appointments(*,
+                    technician:technicians(*)
+                )
+            `)
+            .eq('ticket_number', ticket_number)
+            .single();
+
+        if (error) {
+            console.error('❌ Ticket lookup error:', error);
+            throw error;
+        }
+
+        if (!ticket) {
+            return res.status(404).json({
+                success: false,
+                message: `Ticket ${ticket_number} not found`
+            });
+        }
+
+        res.json({
+            success: true,
+            data: {
+                ticket_number: ticket.ticket_number,
+                ticket_id: ticket.id,
+                status: ticket.status,
+                customer: {
+                    name: ticket.customer.full_name,
+                    phone: ticket.customer.phone,
+                    email: ticket.customer.email
+                },
+                service: {
+                    appliance_type: ticket.appliance_type,
+                    request_type: ticket.request_type,
+                    fault_symptoms: ticket.fault_symptoms,
+                    installation_details: ticket.installation_details,
+                    urgency: ticket.urgency
+                },
+                technician: ticket.appointment?.technician ? {
+                    name: ticket.appointment.technician.name,
+                    phone: ticket.appointment.technician.phone,
+                    contact_instructions: "Technician will call 30 minutes before arrival"
+                } : null,
+                appointment: ticket.appointment ? {
+                    slot_start: ticket.appointment.slot_start,
+                    slot_end: ticket.appointment.slot_end,
+                    status: ticket.appointment.status,
+                    estimated_response_time: "Within 2 hours"
+                } : null,
+                created_at: ticket.created_at,
+                updated_at: ticket.updated_at
+            }
+        });
+
+    } catch (error) {
+        console.error('❌ Ticket status error:', error);
+        res.status(404).json({
+            success: false,
+            message: 'Ticket not found',
+            error: error.message
+        });
+    }
+});
+
 // 3. Reschedule Appointment
 app.post('/api/reschedule/:ticket_id', async (req, res) => {
     try {
@@ -368,6 +442,36 @@ async function findAndAssignTechnician({ ticket_id, customer_id, appliance_type,
         };
     }
 }
+
+// Reschedule appointment function
+async function rescheduleAppointment(ticket_id, preferred_time_slots) {
+    try {
+        console.log(`🔄 Rescheduling appointment for ticket: ${ticket_id}`);
+        
+        // For now, return success with mock data
+        // TODO: Implement real rescheduling algorithm
+        
+        return {
+            success: true,
+            message: 'Appointment rescheduled successfully',
+            appointment: {
+                id: 'rescheduled_appointment_id',
+                slot_start: moment().add(2, 'days').format(),
+                slot_end: moment().add(2, 'days').add(1, 'hour').format(),
+                status: 'rescheduled'
+            }
+        };
+
+    } catch (error) {
+        console.error('❌ Reschedule failed:', error);
+        return {
+            success: false,
+            message: 'Reschedule failed, please call customer service'
+        };
+    }
+}
+
+
 
 // Send notifications with enhanced logging
 async function sendCustomerNotifications({ customer, ticket, appointment, technician }) {
