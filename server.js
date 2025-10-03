@@ -34,22 +34,59 @@ app.post('/api/customer-intake', async (req, res) => {
     console.log(JSON.stringify(req.body, null, 2));
     
     try {
-        const {
+        let {
             full_name,
+            customer_name, // Alternative field name
             phone,
+            customer_phone, // Alternative field name
             email,
+            customer_email, // Alternative field name
             address_text,
             pincode,
+            city, // Alternative to pincode
             request_type, // 'service' or 'installation'
             appliance_type, // 'ac', 'washing_machine', 'refrigerator', 'tv', 'water_purifier'
             model,
             fault_symptoms = [],
             installation_details = [],
-            preferred_time_slots = []
+            preferred_time_slots = [],
+            urgency, // Can be provided directly
+            api_key // For authentication
         } = req.body;
 
-        // Set urgency automatically based on symptoms (optional field)
-        const urgency = determinePriority(fault_symptoms, request_type);
+        // Handle alternative field names (for Inya.ai compatibility)
+        full_name = full_name || customer_name;
+        phone = phone || customer_phone;
+        email = email || customer_email;
+
+        // Ensure fault_symptoms is always an array
+        if (typeof fault_symptoms === 'string') {
+            fault_symptoms = [fault_symptoms];
+        }
+
+        // Ensure installation_details is always an array
+        if (typeof installation_details === 'string') {
+            installation_details = [installation_details];
+        }
+
+        // Set urgency automatically based on symptoms (if not provided)
+        urgency = urgency || determinePriority(fault_symptoms, request_type);
+
+        // Handle city to pincode mapping if pincode not provided
+        if (!pincode && city) {
+            const cityPincodes = {
+                'bangalore': '560001',
+                'mumbai': '400001',
+                'delhi': '110001',
+                'chennai': '600001',
+                'pune': '411001',
+                'hyderabad': '500001',
+                'kolkata': '700001',
+                'ahmedabad': '380001'
+            };
+            pincode = cityPincodes[city.toLowerCase()] || '560001'; // Default to Bangalore
+            address_text = address_text || `${city} area`;
+        }
 
         // Step 1: Get region from pincode
         const region_info = await getRegionFromPincode(pincode);
@@ -184,6 +221,170 @@ app.get('/api/ticket-status/:ticket_number', async (req, res) => {
     try {
         const { ticket_number } = req.params;
         console.log(`🎫 Looking up ticket: ${ticket_number}`);
+        
+        const { data: ticket, error } = await supabase
+            .from('tickets')
+            .select(`
+                *,
+                customer:customers(*),
+                appointment:appointments(*,
+                    technician:technicians(*)
+                )
+            `)
+            .eq('ticket_number', ticket_number)
+            .single();
+
+        if (error) {
+            console.error('❌ Ticket lookup error:', error);
+            throw error;
+        }
+
+        if (!ticket) {
+            return res.status(404).json({
+                success: false,
+                message: `Ticket ${ticket_number} not found`
+            });
+        }
+
+        res.json({
+            success: true,
+            data: {
+                ticket_number: ticket.ticket_number,
+                ticket_id: ticket.id,
+                status: ticket.status,
+                customer: {
+                    name: ticket.customer.full_name,
+                    phone: ticket.customer.phone,
+                    email: ticket.customer.email
+                },
+                service: {
+                    appliance_type: ticket.appliance_type,
+                    request_type: ticket.request_type,
+                    fault_symptoms: ticket.fault_symptoms,
+                    installation_details: ticket.installation_details,
+                    urgency: ticket.urgency
+                },
+                technician: ticket.appointment?.technician ? {
+                    name: ticket.appointment.technician.name,
+                    phone: ticket.appointment.technician.phone,
+                    contact_instructions: "Technician will call 30 minutes before arrival"
+                } : null,
+                appointment: ticket.appointment ? {
+                    slot_start: ticket.appointment.slot_start,
+                    slot_end: ticket.appointment.slot_end,
+                    status: ticket.appointment.status,
+                    estimated_response_time: "Within 2 hours"
+                } : null,
+                created_at: ticket.created_at,
+                updated_at: ticket.updated_at
+            }
+        });
+
+    } catch (error) {
+        console.error('❌ Ticket status error:', error);
+        res.status(404).json({
+            success: false,
+            message: 'Ticket not found',
+            error: error.message
+        });
+    }
+});
+
+// 2.2. Check Ticket Status via POST (For Inya.ai compatibility)
+app.post('/api/check-ticket-status', async (req, res) => {
+    try {
+        const { ticket_number } = req.body;
+        
+        if (!ticket_number) {
+            return res.status(400).json({
+                success: false,
+                message: 'Ticket number is required'
+            });
+        }
+        
+        console.log(`🎫 Looking up ticket via POST: ${ticket_number}`);
+        
+        const { data: ticket, error } = await supabase
+            .from('tickets')
+            .select(`
+                *,
+                customer:customers(*),
+                appointment:appointments(*,
+                    technician:technicians(*)
+                )
+            `)
+            .eq('ticket_number', ticket_number)
+            .single();
+
+        if (error) {
+            console.error('❌ Ticket lookup error:', error);
+            throw error;
+        }
+
+        if (!ticket) {
+            return res.status(404).json({
+                success: false,
+                message: `Ticket ${ticket_number} not found`
+            });
+        }
+
+        res.json({
+            success: true,
+            data: {
+                ticket_number: ticket.ticket_number,
+                ticket_id: ticket.id,
+                status: ticket.status,
+                customer: {
+                    name: ticket.customer.full_name,
+                    phone: ticket.customer.phone,
+                    email: ticket.customer.email
+                },
+                service: {
+                    appliance_type: ticket.appliance_type,
+                    request_type: ticket.request_type,
+                    fault_symptoms: ticket.fault_symptoms,
+                    installation_details: ticket.installation_details,
+                    urgency: ticket.urgency
+                },
+                technician: ticket.appointment?.technician ? {
+                    name: ticket.appointment.technician.name,
+                    phone: ticket.appointment.technician.phone,
+                    contact_instructions: "Technician will call 30 minutes before arrival"
+                } : null,
+                appointment: ticket.appointment ? {
+                    slot_start: ticket.appointment.slot_start,
+                    slot_end: ticket.appointment.slot_end,
+                    status: ticket.appointment.status,
+                    estimated_response_time: "Within 2 hours"
+                } : null,
+                created_at: ticket.created_at,
+                updated_at: ticket.updated_at
+            }
+        });
+
+    } catch (error) {
+        console.error('❌ Ticket status error:', error);
+        res.status(404).json({
+            success: false,
+            message: 'Ticket not found',
+            error: error.message
+        });
+    }
+});
+
+// 2.3. Get Ticket Status with Query Parameter (Alternative for Inya.ai)
+app.get('/api/ticket-status', async (req, res) => {
+    try {
+        const { ticket_number } = req.query;
+        
+        if (!ticket_number) {
+            return res.status(400).json({
+                success: false,
+                message: 'Ticket number is required as query parameter'
+            });
+        }
+        
+        console.log(`🎫 Looking up ticket via query: ${ticket_number}`);
         
         const { data: ticket, error } = await supabase
             .from('tickets')
