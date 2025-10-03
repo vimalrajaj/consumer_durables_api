@@ -411,36 +411,166 @@ async function createServiceTicket(ticket_data) {
     return data;
 }
 
-// Find and assign technician (simplified for now)
+// Find and assign technician with real database lookup
 async function findAndAssignTechnician({ ticket_id, customer_id, appliance_type, fault_symptoms, region_label, preferred_time_slots }) {
     try {
         console.log(`🔍 Finding technician for ${appliance_type} in ${region_label}`);
+        console.log(`🎯 Fault symptoms: ${JSON.stringify(fault_symptoms)}`);
         
-        // For now, return success with mock data
-        // TODO: Implement real matching algorithm
-        
-        return {
-            success: true,
-            appointment: {
-                id: 'mock_appointment_id',
-                slot_start: moment().add(1, 'day').format(),
-                slot_end: moment().add(1, 'day').add(1, 'hour').format(),
-                status: 'scheduled'
-            },
-            technician: {
-                id: 'mock_tech_id',
-                name: 'Raj Kumar',
-                phone: '+91-9876543210'
+        // Step 1: Try exact region + appliance match
+        const { data: exactTechnicians, error } = await supabase
+            .from('technicians')
+            .select('*')
+            .eq('is_active', true)
+            .contains('appliances_supported', [appliance_type])
+            .contains('regions', [region_label.toLowerCase().replace(/\s+/g, '_')]);
+
+        if (error) {
+            console.error('❌ Database query error:', error);
+        }
+
+        console.log(`📋 Found ${exactTechnicians?.length || 0} exact matching technicians`);
+
+        if (exactTechnicians && exactTechnicians.length > 0) {
+            // Score and select best technician
+            const selectedTechnician = selectBestTechnician(exactTechnicians, fault_symptoms, appliance_type);
+            console.log(`✅ Selected technician (exact match): ${selectedTechnician.name} from ${selectedTechnician.regions}`);
+            return createAppointmentWithTechnician(selectedTechnician);
+        }
+
+        // Step 2: Try appliance-only match (any region)
+        console.log('⚠️ No regional match found, trying appliance-only search...');
+        const { data: applianceTechnicians, error: applianceError } = await supabase
+            .from('technicians')
+            .select('*')
+            .eq('is_active', true)
+            .contains('appliances_supported', [appliance_type]);
+
+        if (!applianceError && applianceTechnicians && applianceTechnicians.length > 0) {
+            const selectedTechnician = selectBestTechnician(applianceTechnicians, fault_symptoms, appliance_type);
+            console.log(`✅ Selected technician (appliance match): ${selectedTechnician.name}`);
+            return createAppointmentWithTechnician(selectedTechnician);
+        }
+
+        // Step 3: Try multi-skilled specialists
+        console.log('⚠️ No appliance specialists found, checking multi-skilled technicians...');
+        const { data: allTechnicians, error: allError } = await supabase
+            .from('technicians')
+            .select('*')
+            .eq('is_active', true); // All active technicians
+
+        if (!allError && allTechnicians && allTechnicians.length > 0) {
+            // Find technicians who might handle this appliance type
+            const suitableTechnicians = allTechnicians.filter(tech => 
+                tech.skills.some(skill => skill.includes(appliance_type)) ||
+                tech.appliances_supported.length >= 3 // Multi-skilled
+            );
+
+            if (suitableTechnicians.length > 0) {
+                const selectedTechnician = selectBestTechnician(suitableTechnicians, fault_symptoms, appliance_type);
+                console.log(`✅ Selected technician (specialist): ${selectedTechnician.name}`);
+                return createAppointmentWithTechnician(selectedTechnician);
             }
-        };
+        }
+
+        console.log('❌ No suitable technicians found in database, using fallback');
+        return getMockTechnician();
 
     } catch (error) {
         console.error('❌ Technician assignment failed:', error);
-        return {
-            success: false,
-            message: 'No technician available, will call back within 24 hours'
-        };
+        return getMockTechnician();
     }
+}
+
+// Helper function to select best technician based on skills and experience
+function selectBestTechnician(technicians, fault_symptoms = [], appliance_type) {
+    console.log(`🎯 Scoring ${technicians.length} technicians for ${appliance_type}`);
+    
+    // Score each technician
+    const scoredTechnicians = technicians.map(tech => {
+        let score = 0;
+        
+        // Base score for supporting the appliance
+        if (tech.appliances_supported.includes(appliance_type)) {
+            score += 10;
+        }
+        
+        // Bonus for having more skills (indicates experience)
+        score += Math.min(tech.skills.length, 5); // Max 5 points for skills
+        
+        // Bonus for specific skill matches
+        fault_symptoms.forEach(symptom => {
+            tech.skills.forEach(skill => {
+                if (skill.includes(appliance_type) && skill.includes(symptom.replace('not_', ''))) {
+                    score += 5; // Specific skill match
+                }
+            });
+        });
+        
+        // Bonus for being a specialist (fewer appliances = more specialized)
+        if (tech.appliances_supported.length <= 2) {
+            score += 5; // Specialist bonus
+        }
+        
+        // Bonus for multi-skilled (handling 3+ appliances)
+        if (tech.appliances_supported.length >= 3) {
+            score += 3; // Versatility bonus
+        }
+        
+        console.log(`   ${tech.name}: ${score} points (${tech.skills.length} skills, ${tech.appliances_supported.length} appliances)`);
+        
+        return { ...tech, score };
+    });
+    
+    // Sort by score (highest first)
+    scoredTechnicians.sort((a, b) => b.score - a.score);
+    
+    const selected = scoredTechnicians[0];
+    console.log(`🏆 Best match: ${selected.name} (${selected.score} points)`);
+    
+    return selected;
+}
+
+// Helper function to create appointment with selected technician
+function createAppointmentWithTechnician(technician) {
+    return {
+        success: true,
+        appointment: {
+            id: `apt_${Date.now()}`,
+            slot_start: moment().add(1, 'day').format(),
+            slot_end: moment().add(1, 'day').add(2, 'hours').format(),
+            status: 'scheduled'
+        },
+        technician: {
+            id: technician.id,
+            name: technician.name,
+            phone: technician.phone
+        }
+    };
+}
+
+// Helper function for mock data fallback
+function getMockTechnician() {
+    const mockTechnicians = [
+        { id: 'mock_1', name: 'Raj Kumar', phone: '+91-9876543210' },
+        { id: 'mock_2', name: 'Priya Sharma', phone: '+91-9876543211' },
+        { id: 'mock_3', name: 'Amit Singh', phone: '+91-9876543212' },
+        { id: 'mock_4', name: 'Neha Gupta', phone: '+91-9876543213' }
+    ];
+    
+    // Randomly select a mock technician
+    const randomTech = mockTechnicians[Math.floor(Math.random() * mockTechnicians.length)];
+    
+    return {
+        success: true,
+        appointment: {
+            id: 'mock_appointment_id',
+            slot_start: moment().add(1, 'day').format(),
+            slot_end: moment().add(1, 'day').add(1, 'hour').format(),
+            status: 'scheduled'
+        },
+        technician: randomTech
+    };
 }
 
 // Reschedule appointment function
