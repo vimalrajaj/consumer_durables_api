@@ -636,7 +636,7 @@ async function findAndAssignTechnician({ ticket_id, customer_id, appliance_type,
             // Score and select best technician
             const selectedTechnician = selectBestTechnician(exactTechnicians, fault_symptoms, appliance_type);
             console.log(`✅ Selected technician (exact match): ${selectedTechnician.name} from ${selectedTechnician.regions}`);
-            return createAppointmentWithTechnician(selectedTechnician);
+            return await createAppointmentWithTechnician(selectedTechnician, ticket_id, customer_id);
         }
 
         // Step 2: Try appliance-only match (any region)
@@ -650,7 +650,7 @@ async function findAndAssignTechnician({ ticket_id, customer_id, appliance_type,
         if (!applianceError && applianceTechnicians && applianceTechnicians.length > 0) {
             const selectedTechnician = selectBestTechnician(applianceTechnicians, fault_symptoms, appliance_type);
             console.log(`✅ Selected technician (appliance match): ${selectedTechnician.name}`);
-            return createAppointmentWithTechnician(selectedTechnician);
+            return await createAppointmentWithTechnician(selectedTechnician, ticket_id, customer_id);
         }
 
         // Step 3: Try multi-skilled specialists
@@ -670,16 +670,16 @@ async function findAndAssignTechnician({ ticket_id, customer_id, appliance_type,
             if (suitableTechnicians.length > 0) {
                 const selectedTechnician = selectBestTechnician(suitableTechnicians, fault_symptoms, appliance_type);
                 console.log(`✅ Selected technician (specialist): ${selectedTechnician.name}`);
-                return createAppointmentWithTechnician(selectedTechnician);
+                return await createAppointmentWithTechnician(selectedTechnician, ticket_id, customer_id);
             }
         }
 
         console.log('❌ No suitable technicians found in database, using fallback');
-        return getMockTechnician();
+        return await getMockTechnician(ticket_id, customer_id);
 
     } catch (error) {
         console.error('❌ Technician assignment failed:', error);
-        return getMockTechnician();
+        return await getMockTechnician(ticket_id, customer_id);
     }
 }
 
@@ -733,7 +733,57 @@ function selectBestTechnician(technicians, fault_symptoms = [], appliance_type) 
 }
 
 // Helper function to create appointment with selected technician
-function createAppointmentWithTechnician(technician) {
+async function createAppointmentWithTechnician(technician, ticket_id, customer_id) {
+    try {
+        const appointmentData = {
+            id: `apt_${Date.now()}`,
+            ticket_id: ticket_id,
+            customer_id: customer_id,
+            technician_id: technician.id,
+            slot_start: moment().add(1, 'day').format(),
+            slot_end: moment().add(1, 'day').add(2, 'hours').format(),
+            status: 'scheduled',
+            created_at: new Date().toISOString()
+        };
+
+        // Save appointment to database
+        const { data: appointmentRecord, error: appointmentError } = await supabase
+            .from('appointments')
+            .insert([appointmentData])
+            .select()
+            .single();
+
+        if (appointmentError) {
+            console.error('❌ Failed to save appointment to database:', appointmentError);
+            // Return in-memory data as fallback
+            return createInMemoryAppointment(technician);
+        }
+
+        console.log('✅ Appointment saved to database successfully');
+
+        return {
+            success: true,
+            appointment: {
+                id: appointmentRecord.id,
+                slot_start: appointmentRecord.slot_start,
+                slot_end: appointmentRecord.slot_end,
+                status: appointmentRecord.status
+            },
+            technician: {
+                id: technician.id,
+                name: technician.name,
+                phone: technician.phone
+            }
+        };
+
+    } catch (error) {
+        console.error('❌ Error creating appointment:', error);
+        return createInMemoryAppointment(technician);
+    }
+}
+
+// Fallback function for in-memory appointment data
+function createInMemoryAppointment(technician) {
     return {
         success: true,
         appointment: {
@@ -751,7 +801,7 @@ function createAppointmentWithTechnician(technician) {
 }
 
 // Helper function for mock data fallback
-function getMockTechnician() {
+async function getMockTechnician(ticket_id, customer_id) {
     const mockTechnicians = [
         { id: 'mock_1', name: 'Raj Kumar', phone: '+91-9876543210' },
         { id: 'mock_2', name: 'Priya Sharma', phone: '+91-9876543211' },
@@ -762,6 +812,11 @@ function getMockTechnician() {
     // Randomly select a mock technician
     const randomTech = mockTechnicians[Math.floor(Math.random() * mockTechnicians.length)];
     
+    if (ticket_id && customer_id) {
+        return await createAppointmentWithTechnician(randomTech, ticket_id, customer_id);
+    }
+    
+    // Fallback to in-memory data
     return {
         success: true,
         appointment: {
