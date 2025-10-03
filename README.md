@@ -11,7 +11,7 @@
 
 *Built for Inya.ai Challenge - Complete Voice Agent Solution*
 
-[🔗 **Live API**](https://consumer-durabales-tracker.onrender.com) • [📱 **Voice Agent Demo**](#demo-videos) • [📊 **System Architecture**](#architecture--components)
+[🔗 **Live API**](https://consumer-durables-api.onrender.com) • [📱 **Voice Agent Demo**](https://youtu.be/tqxDWqBwUhI) .
 
 </div>
 
@@ -108,7 +108,7 @@ sequenceDiagram
 
 ## 🚀 **Production API Endpoints**
 
-### 🌐 **Base URL**: `https://consumer-durabales-tracker.onrender.com`
+### 🌐 **Base URL**: `https://consumer-durables-api.onrender.com`
 
 | Endpoint | Method | Purpose | Status |
 |----------|---------|---------|---------|
@@ -659,9 +659,9 @@ graph LR
 
 ### 🔗 **Project Links**
 
-[![🚀 Live API](https://img.shields.io/badge/Live%20API-consumer--durabales--tracker.onrender.com-blue?style=for-the-badge)](https://consumer-durabales-tracker.onrender.com)
-[![📱 System Health](https://img.shields.io/badge/System%20Health-Check%20Status-green?style=for-the-badge)](https://consumer-durabales-tracker.onrender.com/health)
-[![🎫 Demo Ticket](https://img.shields.io/badge/Demo%20Ticket-TKT487179-orange?style=for-the-badge)](#)
+[![🚀 Live API](https://img.shields.io/badge/Live%20API-consumer--durabales--tracker.onrender.com-blue?style=for-the-badge)](https://consumer-durables-api.onrender.com)
+[![📱 System Health](https://img.shields.io/badge/System%20Health-Check%20Status-green?style=for-the-badge)](https://consumer-durables-api.onrender.com/health)
+[![🎫 Demo Ticket](https://img.shields.io/badge/Demo%20Ticket-TKT487179-orange?style=for-the-badge)](https://consumer-durables-api.onrender.com/TKT487179)
 
 </div>
 
