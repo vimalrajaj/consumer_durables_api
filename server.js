@@ -735,16 +735,17 @@ function selectBestTechnician(technicians, fault_symptoms = [], appliance_type) 
 // Helper function to create appointment with selected technician
 async function createAppointmentWithTechnician(technician, ticket_id, customer_id) {
     try {
+        // ✅ FIX: Remove custom id and created_at - let Supabase auto-generate
         const appointmentData = {
-            id: `apt_${Date.now()}`,
             ticket_id: ticket_id,
             customer_id: customer_id,
             technician_id: technician.id,
             slot_start: moment().add(1, 'day').format(),
             slot_end: moment().add(1, 'day').add(2, 'hours').format(),
-            status: 'scheduled',
-            created_at: new Date().toISOString()
+            status: 'scheduled'
         };
+
+        console.log('💾 Saving appointment to database:', JSON.stringify(appointmentData, null, 2));
 
         // Save appointment to database
         const { data: appointmentRecord, error: appointmentError } = await supabase
@@ -755,11 +756,13 @@ async function createAppointmentWithTechnician(technician, ticket_id, customer_i
 
         if (appointmentError) {
             console.error('❌ Failed to save appointment to database:', appointmentError);
+            console.error('❌ Error details:', JSON.stringify(appointmentError, null, 2));
             // Return in-memory data as fallback
             return createInMemoryAppointment(technician);
         }
 
-        console.log('✅ Appointment saved to database successfully');
+        console.log('✅ Appointment saved to database successfully!');
+        console.log('✅ Appointment ID:', appointmentRecord.id);
 
         return {
             success: true,
@@ -887,7 +890,9 @@ async function sendCustomerNotifications({ customer, ticket, appointment, techni
             technician_name: technician.name,
             technician_phone: technician.phone,
             service_type: ticket.request_type,
-            appliance_type: ticket.appliance_type
+            appliance_type: ticket.appliance_type,
+            ticket_id: ticket.id,
+            customer_id: customer.id
         });
         console.log('📱 SMS Result:', JSON.stringify(smsResult, null, 2));
 
@@ -902,7 +907,9 @@ async function sendCustomerNotifications({ customer, ticket, appointment, techni
             service_type: ticket.request_type,
             appliance_type: ticket.appliance_type,
             appointment_time: appointment.slot_start,
-            estimated_response_time: "Within 2 hours"
+            estimated_response_time: "Within 2 hours",
+            ticket_id: ticket.id,
+            customer_id: customer.id
         });
         console.log('📧 Email Result:', JSON.stringify(emailResult, null, 2));
 
@@ -934,7 +941,9 @@ app.post('/api/send-notifications', async (req, res) => {
             service_type,
             appliance_type,
             appointment_time,
-            estimated_response_time
+            estimated_response_time,
+            ticket_id,
+            customer_id
         } = req.body;
 
         // Send SMS
@@ -945,7 +954,9 @@ app.post('/api/send-notifications', async (req, res) => {
             technician_name,
             technician_phone,
             service_type,
-            appliance_type
+            appliance_type,
+            ticket_id,
+            customer_id
         });
 
         // Send Email  
@@ -958,7 +969,9 @@ app.post('/api/send-notifications', async (req, res) => {
             service_type,
             appliance_type,
             appointment_time,
-            estimated_response_time
+            estimated_response_time,
+            ticket_id,
+            customer_id
         });
 
         res.json({
@@ -1070,7 +1083,7 @@ function formatPhoneNumber(phone) {
 }
 
 // 📱 SMS HELPER FUNCTION
-async function sendSMSNotification({ phone, customer_name, ticket_number, technician_name, technician_phone, service_type, appliance_type }) {
+async function sendSMSNotification({ phone, customer_name, ticket_number, technician_name, technician_phone, service_type, appliance_type, ticket_id, customer_id }) {
     try {
         // Twilio configuration from environment variables
         const accountSid = process.env.TWILIO_ACCOUNT_SID;
@@ -1115,6 +1128,37 @@ async function sendSMSNotification({ phone, customer_name, ticket_number, techni
         );
 
         console.log('📱 SMS sent successfully:', response.data.sid);
+
+        // ✅ NEW: Save notification to database
+        try {
+            const notificationData = {
+                ticket_id: ticket_id,
+                customer_id: customer_id,
+                notification_type: 'sms',
+                recipient: formattedPhone,
+                message: smsBody,
+                status: 'sent',
+                delivery_status: response.data.status || 'sent',
+                external_id: response.data.sid,
+                sent_at: new Date().toISOString()
+            };
+
+            const { data: savedNotification, error: notificationError } = await supabase
+                .from('notifications')
+                .insert([notificationData])
+                .select()
+                .single();
+
+            if (notificationError) {
+                console.error('⚠️ Failed to save SMS notification to database:', notificationError);
+            } else {
+                console.log('✅ SMS notification saved to database:', savedNotification.id);
+            }
+        } catch (dbError) {
+            console.error('⚠️ Database error saving SMS notification:', dbError);
+            // Don't fail the whole request if DB save fails
+        }
+
         return {
             success: true,
             sid: response.data.sid,
@@ -1128,7 +1172,7 @@ async function sendSMSNotification({ phone, customer_name, ticket_number, techni
 }
 
 // 📧 EMAIL HELPER FUNCTION
-async function sendEmailNotification({ email, customer_name, ticket_number, technician_name, technician_phone, service_type, appliance_type, appointment_time, estimated_response_time }) {
+async function sendEmailNotification({ email, customer_name, ticket_number, technician_name, technician_phone, service_type, appliance_type, appointment_time, estimated_response_time, ticket_id, customer_id }) {
     try {
         // SendGrid configuration from environment variables
         const sgMail = require('@sendgrid/mail');
@@ -1200,6 +1244,37 @@ async function sendEmailNotification({ email, customer_name, ticket_number, tech
         const response = await sgMail.send(msg);
         
         console.log('📧 Email sent successfully');
+
+        // ✅ NEW: Save notification to database
+        try {
+            const notificationData = {
+                ticket_id: ticket_id,
+                customer_id: customer_id,
+                notification_type: 'email',
+                recipient: email,
+                message: `Service Confirmation - Ticket ${ticket_number}`,
+                status: 'sent',
+                delivery_status: 'delivered',
+                external_id: response[0].headers['x-message-id'] || 'sent',
+                sent_at: new Date().toISOString()
+            };
+
+            const { data: savedNotification, error: notificationError } = await supabase
+                .from('notifications')
+                .insert([notificationData])
+                .select()
+                .single();
+
+            if (notificationError) {
+                console.error('⚠️ Failed to save email notification to database:', notificationError);
+            } else {
+                console.log('✅ Email notification saved to database:', savedNotification.id);
+            }
+        } catch (dbError) {
+            console.error('⚠️ Database error saving email notification:', dbError);
+            // Don't fail the whole request if DB save fails
+        }
+
         return {
             success: true,
             messageId: response[0].headers['x-message-id'] || 'sent'
