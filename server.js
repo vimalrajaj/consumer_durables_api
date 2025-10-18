@@ -88,6 +88,11 @@ app.post('/api/customer-intake', async (req, res) => {
             address_text = address_text || `${city} area`;
         }
 
+        // ✅ FALLBACK: If still no pincode, use default
+        if (!pincode) {
+            pincode = '600001'; // Default Chennai
+        }
+
         // Step 1: Get region from pincode
         const region_info = await getRegionFromPincode(pincode);
         
@@ -512,6 +517,15 @@ function determinePriority(fault_symptoms = [], request_type) {
 
 // Get region from pincode with fallback
 async function getRegionFromPincode(pincode) {
+    // ✅ Safety check
+    if (!pincode) {
+        return { 
+            region_label: 'Chennai City', 
+            state: 'Tamil Nadu', 
+            city: 'Chennai' 
+        };
+    }
+    
     try {
         // First check our cache
         const { data: cached_region } = await supabase
@@ -1084,6 +1098,9 @@ function formatPhoneNumber(phone) {
 
 // 📱 SMS HELPER FUNCTION
 async function sendSMSNotification({ phone, customer_name, ticket_number, technician_name, technician_phone, service_type, appliance_type, ticket_id, customer_id }) {
+    console.log('\n🚀 === SMS FUNCTION STARTED ===');
+    console.log('Parameters received:', { phone, customer_name, ticket_number, ticket_id, customer_id });
+    
     try {
         // Twilio configuration from environment variables
         const accountSid = process.env.TWILIO_ACCOUNT_SID;
@@ -1129,35 +1146,15 @@ async function sendSMSNotification({ phone, customer_name, ticket_number, techni
 
         console.log('📱 SMS sent successfully:', response.data.sid);
 
-        // ✅ NEW: Save notification to database
-        try {
-            const notificationData = {
-                ticket_id: ticket_id,
-                customer_id: customer_id,
-                notification_type: 'sms',
-                recipient: formattedPhone,
-                message: smsBody,
-                status: 'sent',
-                delivery_status: response.data.status || 'sent',
-                external_id: response.data.sid,
-                sent_at: new Date().toISOString()
-            };
-
-            const { data: savedNotification, error: notificationError } = await supabase
-                .from('notifications')
-                .insert([notificationData])
-                .select()
-                .single();
-
-            if (notificationError) {
-                console.error('⚠️ Failed to save SMS notification to database:', notificationError);
-            } else {
-                console.log('✅ SMS notification saved to database:', savedNotification.id);
-            }
-        } catch (dbError) {
-            console.error('⚠️ Database error saving SMS notification:', dbError);
-            // Don't fail the whole request if DB save fails
-        }
+        // ✅ Save as DELIVERED (API called successfully)
+        await supabase.from('notifications').insert([{
+            ticket_id: ticket_id,
+            customer_id: customer_id,
+            type: 'sms',
+            content: smsBody,
+            status: 'delivered',
+            sent_at: new Date().toISOString()
+        }]);
 
         return {
             success: true,
@@ -1167,12 +1164,29 @@ async function sendSMSNotification({ phone, customer_name, ticket_number, techni
 
     } catch (error) {
         console.error('❌ SMS Error:', error.response?.data || error.message);
-        throw error;
+        
+        // ❌ Save as ERROR (API call failed)
+        await supabase.from('notifications').insert([{
+            ticket_id: ticket_id,
+            customer_id: customer_id,
+            type: 'sms',
+            content: smsBody,
+            status: 'error',
+            sent_at: new Date().toISOString()
+        }]);
+        
+        return {
+            success: false,
+            error: error.message
+        };
     }
 }
 
 // 📧 EMAIL HELPER FUNCTION
 async function sendEmailNotification({ email, customer_name, ticket_number, technician_name, technician_phone, service_type, appliance_type, appointment_time, estimated_response_time, ticket_id, customer_id }) {
+    console.log('\n📧 === EMAIL FUNCTION STARTED ===');
+    console.log('Parameters received:', { email, customer_name, ticket_number, ticket_id, customer_id });
+    
     try {
         // SendGrid configuration from environment variables
         const sgMail = require('@sendgrid/mail');
@@ -1245,35 +1259,15 @@ async function sendEmailNotification({ email, customer_name, ticket_number, tech
         
         console.log('📧 Email sent successfully');
 
-        // ✅ NEW: Save notification to database
-        try {
-            const notificationData = {
-                ticket_id: ticket_id,
-                customer_id: customer_id,
-                notification_type: 'email',
-                recipient: email,
-                message: `Service Confirmation - Ticket ${ticket_number}`,
-                status: 'sent',
-                delivery_status: 'delivered',
-                external_id: response[0].headers['x-message-id'] || 'sent',
-                sent_at: new Date().toISOString()
-            };
-
-            const { data: savedNotification, error: notificationError } = await supabase
-                .from('notifications')
-                .insert([notificationData])
-                .select()
-                .single();
-
-            if (notificationError) {
-                console.error('⚠️ Failed to save email notification to database:', notificationError);
-            } else {
-                console.log('✅ Email notification saved to database:', savedNotification.id);
-            }
-        } catch (dbError) {
-            console.error('⚠️ Database error saving email notification:', dbError);
-            // Don't fail the whole request if DB save fails
-        }
+        // ✅ Save as DELIVERED (API called successfully)
+        await supabase.from('notifications').insert([{
+            ticket_id: ticket_id,
+            customer_id: customer_id,
+            type: 'email',
+            content: `Service Confirmation - Ticket ${ticket_number}`,
+            status: 'delivered',
+            sent_at: new Date().toISOString()
+        }]);
 
         return {
             success: true,
@@ -1282,7 +1276,21 @@ async function sendEmailNotification({ email, customer_name, ticket_number, tech
 
     } catch (error) {
         console.error('❌ Email Error:', error.response?.data || error.message);
-        throw error;
+        
+        // ❌ Save as ERROR (API call failed)
+        await supabase.from('notifications').insert([{
+            ticket_id: ticket_id,
+            customer_id: customer_id,
+            type: 'email',
+            content: `Service Confirmation - Ticket ${ticket_number}`,
+            status: 'error',
+            sent_at: new Date().toISOString()
+        }]);
+        
+        return {
+            success: false,
+            error: error.message
+        };
     }
 }
 
