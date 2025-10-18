@@ -13,7 +13,7 @@
 
 *Built for Inya.ai Challenge - Complete Voice Agent Solution*
 
-[🔗 **Live API**](https://consumer-durabales-tracker.onrender.com) • [� **Inya.ai Prompts**](INYA-AI-SYSTEM-PROMPT.md) • [🗄️ **Database Setup**](DATABASE-SETUP.md)
+[🔗 **Live API**](https://consumer-durables-api.onrender.com) • [📱 **Voice Agent Demo**](https://youtu.be/tqxDWqBwUhI) • [📋 **Inya.ai Prompts**](INYA-AI-SYSTEM-PROMPT.md) • [🗄️ **Database Setup**](DATABASE-SETUP.md)
 
 </div>
 
@@ -171,7 +171,7 @@ sequenceDiagram
 # 📡 API Endpoints
 
 ## Production Base URL
-**https://consumer-durabales-tracker.onrender.com**
+**https://consumer-durables-api.onrender.com**
 
 ## Available Endpoints
 
@@ -360,7 +360,7 @@ npm start
 4. **Start Command**: `npm start`
 5. **Auto-deploy** enabled on master branch push
 
-**Live URL**: https://consumer-durabales-tracker.onrender.com
+**Live URL**: https://consumer-durables-api.onrender.com
 
 ---
 
@@ -385,10 +385,10 @@ node test-all-endpoints.js
 
 ```bash
 # Health check
-curl https://consumer-durabales-tracker.onrender.com/health
+curl https://consumer-durables-api.onrender.com/health
 
 # Create service ticket
-curl -X POST https://consumer-durabales-tracker.onrender.com/api/customer-intake \
+curl -X POST https://consumer-durables-api.onrender.com/api/customer-intake \
   -H "Content-Type: application/json" \
   -d '{
     "full_name": "Test User",
@@ -400,7 +400,7 @@ curl -X POST https://consumer-durabales-tracker.onrender.com/api/customer-intake
   }'
 
 # Check ticket status
-curl https://consumer-durabales-tracker.onrender.com/api/ticket-status/TKT487179
+curl https://consumer-durables-api.onrender.com/api/ticket-status/TKT487179
 ```
 
 ---
@@ -549,7 +549,7 @@ ORDER BY sent_at DESC;
 ✅ **Appliance-Specific Diagnostics**: AC, WM, Fridge, TV, Water Purifier  
 ✅ **Professional Tone**: Calm, supportive, solution-oriented  
 ✅ **Data Management**: Complete persistence with audit trail  
-✅ **Production Deployment**: Live at https://consumer-durabales-tracker.onrender.com  
+✅ **Production Deployment**: Live at https://consumer-durables-api.onrender.com  
 ✅ **Notification System**: SMS + Email with delivery tracking  
 ✅ **Technician Network**: 54 specialists across 8+ cities  
 ✅ **Regional Coverage**: Pincode-based intelligent routing  
@@ -583,7 +583,7 @@ All systems operational • Full test coverage • Database persistence fixed �
 
 ## 🚀 **Production API Endpoints**
 
-### 🌐 **Base URL**: `https://consumer-durabales-tracker.onrender.com`
+### 🌐 **Base URL**: `https://consumer-durables-api.onrender.com`
 
 | Endpoint | Method | Purpose | Status |
 |----------|---------|---------|---------|
@@ -976,14 +976,14 @@ npm run dev
 4. **Start Command**: `npm start`
 5. **Auto-Deploy**: Enabled on every push to `master`
 
-**Live URL**: https://consumer-durabales-tracker.onrender.com
+**Live URL**: https://consumer-durables-api.onrender.com
 </details>
 
 ### 🧪 **Testing & Verification**
 
 ```bash
 # 🔍 Health Check
-curl https://consumer-durabales-tracker.onrender.com/health
+curl https://consumer-durables-api.onrender.com/health
 
 # 📱 Phone Format Testing
 node test-phone-formats.js
@@ -1134,9 +1134,9 @@ graph LR
 
 ### 🔗 **Project Links**
 
-[![🚀 Live API](https://img.shields.io/badge/Live%20API-consumer--durabales--tracker.onrender.com-blue?style=for-the-badge)](https://consumer-durabales-tracker.onrender.com)
-[![📱 System Health](https://img.shields.io/badge/System%20Health-Check%20Status-green?style=for-the-badge)](https://consumer-durabales-tracker.onrender.com/health)
-[![🎫 Demo Ticket](https://img.shields.io/badge/Demo%20Ticket-TKT487179-orange?style=for-the-badge)](#)
+[![🚀 Live API](https://img.shields.io/badge/Live%20API-consumer--durabales--tracker.onrender.com-blue?style=for-the-badge)](https://consumer-durables-api.onrender.com)
+[![📱 System Health](https://img.shields.io/badge/System%20Health-Check%20Status-green?style=for-the-badge)](https://consumer-durables-api.onrender.com/health)
+[![🎫 Demo Ticket](https://img.shields.io/badge/Demo%20Ticket-TKT487179-orange?style=for-the-badge)](https://consumer-durables-api.onrender.com/TKT487179)
 
 </div>
 
